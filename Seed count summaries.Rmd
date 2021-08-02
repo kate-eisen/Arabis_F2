@@ -1,0 +1,43 @@
+---
+title: "Arabis F2 Seeds"
+output: github_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+*Goal*: To understand what we have in terms of representation from different populations in the F2 seeds.
+
+```{r, warning=FALSE, message=FALSE}
+library(tidyverse)
+library(knitr)
+
+seeds <- read_csv("F1_pollinations_2021.csv")
+
+ids <- read_csv("F1_individuals_2020.csv")
+```
+
+Add ID information to the seed counts:
+
+```{r, warning=FALSE, message=FALSE}
+
+seed_ids <- left_join(seeds, ids, by=c("Mother_ID"="Full_ID"))
+```
+
+Summarize what we have:
+
+```{r, warning=FALSE, message=FALSE}
+
+##need to change NAs in seed counts to zeros to facilitate summaries
+
+counts <- seed_ids %>% filter(Treatment=="Self") %>% mutate(N_Seeds = replace_na(N_Seeds, 0)) %>% group_by(Cross_Type, Mother_ID) %>% summarize(Seed_Count=sum(N_Seeds))
+
+kable(counts)
+
+counts <- seed_ids %>% filter(Treatment=="Self") %>% mutate(N_Seeds = replace_na(N_Seeds, 0)) %>% group_by(Cross_Type) %>% summarize(N_RepsPerCross=length(unique(Mother_ID)), Seed_Count=sum(N_Seeds))
+
+kable(counts)
+
+```
+
