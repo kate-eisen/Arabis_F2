@@ -9,7 +9,21 @@ knitr::opts_chunk$set(echo = TRUE)
 
 *Goal*: To understand what we have in terms of representation from different populations in the F2 seeds.
 
-```{r, warning=FALSE, message=FALSE}
+**Table 1**. A summary of the F1s that were selfed. Maternal and paternal seed sources refer to the parental generation.
+
+Maternal seed source | Paternal seed source(s)
+----------------------|----------------------
+Fr2 | It2, It5, It6, It8, It9, It10, It17
+It2 | Fr2
+It6 | Fr2
+It8 | Fr2
+It9 | Fr2 
+
+The crosses that we have represented in the F2s in both directions are Fr2 with It2, It6, It8, and It9.
+
+Fr2 plants produce very little scent, while the Italian populations are variable but generally all highly scented (relative to populations from Sweden and other populations from France).
+
+```{r, warning=FALSE, message=FALSE, echo=FALSE}
 library(tidyverse)
 library(knitr)
 
@@ -18,26 +32,36 @@ seeds <- read_csv("F1_pollinations_2021.csv")
 ids <- read_csv("F1_individuals_2020.csv")
 ```
 
-Add ID information to the seed counts:
-
-```{r, warning=FALSE, message=FALSE}
-
+```{r, warning=FALSE, message=FALSE, echo=FALSE}
+#Add ID information to the seed counts:
 seed_ids <- left_join(seeds, ids, by=c("Mother_ID"="Full_ID"))
 ```
 
-Summarize what we have:
+**Table 2**: A summary of seed production by F1 cross type. `Cross_Type` is mother x father. `N_F1` is the number of F1 plants from a given cross Hanna selfed to make the F2s. `N_Fruits` is the total number of fruits from that cross (e.g., the sum of all of the fruits from each of the plants from the particular cross). `Seed_Count` is the total number of seeds generated from all of the fruits and plants of the particular cross. `SeedsperFruit` is the average number of seeds in a fruit, to help identify which plants produced fruits with more seeds (could relate to viability). The `NA` cross type refers to plants that were not in the spreadsheet but did have fruits collected.
 
-```{r, warning=FALSE, message=FALSE}
+```{r, warning=FALSE, message=FALSE, echo=FALSE}
+counts <- seed_ids %>% filter(Treatment=="Self") %>% mutate(N_Seeds = replace_na(N_Seeds, 0)) %>% group_by(Cross_Type) %>% summarize(N_F1=length(unique(Mother_ID)), N_Fruits=length(Mother_ID), Seed_Count=sum(N_Seeds), SeedsperFruit=round(mean(N_Seeds), digits=0))
+
+kable(counts)
+```
+
+*Observations*
+
+* Fr2 and It6 crosses in both directions yielded a lot of total seeds.
+* Fr2 x It8 and Fr2 x It9 have a lot of seeds, but the reverse crosses don't. This is in large part due to the fact that fewer plants with Italian mothers were selfed (as opposed to the selfed plants having poor seed set).
+* Some of the crosses where we have greater average seed set per fruit (e.g., Fr2 x It17, It2, It5) have fewer unique F1s and fruits in the seed pool.
+
+**Table 3**: The same data as above, but broken out by individual F1s. This table shows how plants varied in terms of how many selfed fruits were done. `Cross_Type` is as above. `F1_ID` is the code for specific F1 individual (that was selfed to make these seeds). `N_Fruits` is the total number of fruits made by the plant. `Seed_Count` is the total number of seeds made by the plant. `SeedsperFruit` is the average number of seeds in a fruit.
+
+```{r, warning=FALSE, message=FALSE, echo=FALSE}
 
 ##need to change NAs in seed counts to zeros to facilitate summaries
 
-counts <- seed_ids %>% filter(Treatment=="Self") %>% mutate(N_Seeds = replace_na(N_Seeds, 0)) %>% group_by(Cross_Type, Mother_ID) %>% summarize(Seed_Count=sum(N_Seeds))
+counts <- seed_ids %>% filter(Treatment=="Self") %>% mutate(N_Seeds = replace_na(N_Seeds, 0), F1_ID=Mother_ID) %>%  group_by(Cross_Type, F1_ID) %>% summarize(N_Fruits=length(Mother_ID),Seed_Count=sum(N_Seeds), SeedsperFruit=round(mean(N_Seeds), digits=0))
 
 kable(counts)
 
-counts <- seed_ids %>% filter(Treatment=="Self") %>% mutate(N_Seeds = replace_na(N_Seeds, 0)) %>% group_by(Cross_Type) %>% summarize(N_RepsPerCross=length(unique(Mother_ID)), Seed_Count=sum(N_Seeds))
 
-kable(counts)
 
 ```
 
