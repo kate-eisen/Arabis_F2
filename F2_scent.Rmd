@@ -1,0 +1,245 @@
+---
+title: "Untitled"
+output: github_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+library(tidyverse)
+library(knitr)
+library(lme4)
+library(lmerTest)
+library(emmeans)
+library(readxl)
+library(bouquet)
+```
+
+
+
+
+
+```{r}
+areas <- read_xlsx("Long_Integration_no_hex.xlsx")
+areas <- areas[,1:11]
+areas_comp <- areas[,c(1,2,4:11)]
+
+
+#areas_tol <- rbind(areas_comp, tol_comp)
+
+longdata <- load_longdata(areas_comp, sample = "Sample", name="Compound", RT="Ret Time", area="Area", match="Start Time") %>% mutate(match=100) %>% replace_na(list(RT=0, area=0)) %>% dplyr::select(sample, name, RT, area, match)
+
+meta1 <- read_xlsx("Scent_2022.xlsx") %>% dplyr::select(`Scent ID`, `Plant ID`, Flowers, Date) %>% mutate(Type=if_else(`Plant ID`=="Ctrl", "ambient", "floral"))%>% mutate(date=as.Date(Date, format = "%Y-%m-%d")) %>% filter(`Scent ID` %in% areas$Sample)
+
+metadata <- load_metadata(meta1, date = "date", 
+                          sample = "Scent ID",  
+                          type = "Type", amount = "Flowers") %>% dplyr::select(-`Plant ID`, -Date) %>% mutate(sample=as.factor(as.character(sample)))
+
+#combined <- left_join(areas, meta1, by=c("Sample"="Scent ID"))
+
+#we get benzaldehyde, benzyl alcohol, acetophenone, and methyl salicylate in some controls
+
+#removing sample from Feb 09 because it's just one control
+
+meta_sm <- metadata %>% filter(date !="2022-02-09")
+
+long_sm <- longdata %>% filter(sample %in% meta_sm$sample)
+
+```
+
+```{r}
+chemtable <- make_chemtable(longdata, metadata)
+chemtable_sm <- make_chemtable(long_sm, meta_sm)
+
+
+sampletable_sm <- make_sampletable(long_sm, meta_sm)
+
+#totals <- sampletable_sm %>% mutate(total=(rowSums(.)-toluene-Peak_1-Peak_2)) %>% mutate(tol.d.tol = total/toluene)
+
+#ggplot(aes(x=toluene, y=total), data=totals)+geom_point()+theme_classic()
+#ggplot(aes(x=total, y=tol.d.tol), data=totals)+geom_point()+theme_classic()+xlab("total emissions (peak area)") + ylab("total emissions area / toluene area")
+
+
+#total scent is not correlated with total toluene
+
+#sub_date <- function (chemtable, sampletable, metadata) 
+#{
+ #   nvol <- ncol(sampletable)
+  #  metadata <- metadata[!is.na(metadata$date), ]
+   # metadata$date <- factor(metadata$date)
+  #ambient_sub <- data.frame(matrix(rep(0, nlevels(metadata$date) * 
+   #     nrow(chemtable)), ncol = nlevels(metadata$date), nrow = nrow(chemtable)))
+    #colnames(ambient_sub) <- levels(metadata$date)
+    #rownames(ambient_sub) <- chemtable$name
+    #for (i in unique(metadata$date)) {
+     #   if (length(which(metadata$type == "floral" & metadata$date == 
+      #      i)) == 0 | length(which(metadata$type == "ambient" & 
+       #     metadata$date == i)) == 0) {
+        #    ambient_sub[, i] <- NA
+         #   print(paste("bad!!!", i))
+        #}
+        #else {
+         #   ambient_sub[, i] <- sapply(1:nvol, function(x) {
+          #      SampMean <- mean(sampletable[which(metadata$type == 
+           #       "floral" & metadata$date == i), x])
+            #    AmbiMean <- mean(sampletable[which(metadata$type == 
+             #     "ambient" & metadata$date == i), x])
+              #  return(ifelse(SampMean == 0, 0, ifelse(AmbiMean == 
+               #   0, 0, SampMean-AmbiMean)))
+          #  })
+        #}
+  #  }
+    
+   # return(ambient_sub)
+#}
+
+#sub_date(chemtable_sm, sampletable_sm, meta_sm)
+  
+#filt_ob <- filter_ambient_date(chemtable_sm, sampletable_sm, meta_sm, ratio=2)
+
+
+#pruned_data <- prune_sampletable_dates(sampletable_sm, chemtable_sm,meta_sm, filt_ob)
+```
+
+```{r}
+combined <- left_join(long_sm, meta_sm, by="sample")
+
+combined_wide <- pivot_wider(combined, id_cols = c(sample, amount, type,date),names_from=name, values_from = area)
+
+combined_floral <- combined_wide %>% filter(type=="floral")
+combined_ambient <- combined_wide %>% filter(type=="ambient")
+
+combined_all_sub <- merge(combined_floral, combined_ambient, by = "date", all.x = TRUE) %>% mutate(benzaldehyde = if_else(benzaldehyde.x-benzaldehyde.y>0,benzaldehyde.x-benzaldehyde.y ,0), acetophenone = if_else(acetophenone.x-acetophenone.y>0,acetophenone.x-acetophenone.y ,0), benzyl_alcohol = if_else(benzyl_alcohol.x-benzyl_alcohol.y>0, benzyl_alcohol.x-benzyl_alcohol.y,0), methyl_salicylate = 
+  if_else(methyl_salicylate.x-methyl_salicylate.y>0, methyl_salicylate.x-methyl_salicylate.y,0))
+
+combined_all_sub <- combined_all_sub[,c(1:6,8, 10:12,14,16:18,36:39)]
+colnames(combined_all_sub) <- c("date" ,                      "sample"   ,                "amount"    ,               "type"  ,                  "four_methoxybenzaldehyde", "four_oxoisophorone"    ,   "phenylethyl_alcohol" ,     "methyl_benzoate"  ,       
+  "phenylacetaldehyde"  ,     "benzyl_acetate"   ,        "phenylethyl_acetate"  ,          
+"benzene_propanol" ,        "cinnamyl_alcohol"     ,  "benzyl_benzoate",  "benzaldehyde"          ,     "acetophenone"       ,       
+ "benzyl_alcohol"    ,         "methyl_salicylate"      )
+
+combined_all_sub$total<-rowSums(combined_all_sub[,5:18])
+
+hist(log(combined_all_sub$total))
+
+
+combined_all_ratio <- merge(combined_floral, combined_ambient, by = "date", all.x = TRUE) %>% mutate(benzaldehyde = if_else(benzaldehyde.x/benzaldehyde.y>2 | benzaldehyde.y==0,benzaldehyde.x,0), acetophenone = if_else(acetophenone.x/acetophenone.y>2 | acetophenone.y==0,acetophenone.x ,0), benzyl_alcohol = if_else(benzyl_alcohol.x/benzyl_alcohol.y>2 | benzyl_alcohol.y==0, benzyl_alcohol.x,0), methyl_salicylate = 
+  if_else(methyl_salicylate.x/methyl_salicylate.y>2 | methyl_salicylate.y==0, methyl_salicylate.x,0))
+
+combined_all_ratio <- combined_all_ratio[,c(1:6,8, 10:12,14,16:18,36:39)]
+colnames(combined_all_ratio) <- c("date" ,                      "sample"   ,                "amount"    ,               "type"  ,                  "four_methoxybenzaldehyde", "four_oxoisophorone"    ,   "phenylethyl_alcohol" ,     "methyl_benzoate"  ,       
+  "phenylacetaldehyde"  ,     "benzyl_acetate"   ,        "phenylethyl_acetate"  ,          
+"benzene_propanol" ,        "cinnamyl_alcohol"     ,  "benzyl_benzoate",  "benzaldehyde"          ,     "acetophenone"       ,       
+ "benzyl_alcohol"    ,         "methyl_salicylate"      )
+
+combined_all_ratio$total<-rowSums(combined_all_ratio[,5:18])
+
+hist(log(combined_all_ratio$total))
+
+a <- ggplot(aes(log(total)),data=combined_all_ratio)+geom_histogram(fill="#99e291", color="white")+theme_classic()+xlab("log(total scent emissions)")+ylab("frequency")+ggtitle("Ratio filter: floral are > 2x control")+xlim(c(8,18))
+  
+ b <- ggplot()+geom_histogram(aes(log(total)), data=combined_all_sub, fill="#1fa043", color="white")+theme_classic()+ggtitle("Subtraction filter: floral - control")+xlab("log(total scent emissions)")+ylab("frequency")+xlim(c(8,18))
+  
+  ggarrange(a,b, nrow=1, ncol=2)
+
+```
+
+```{r}
+tol <- read_csv("toluene_peaks_2023.csv") %>% filter(Sample !="blank")
+tol_comp <- tol[,c(1,3:11)]
+
+tol_wide <- pivot_wider(tol, id_cols=c(Run, Date, Sample), names_from = Compound, values_from = Area) %>% mutate(tol_adj = toluene-Peak_1-Peak_2, outlier=if_else(tol_adj < 30745141 | tol_adj > 66601104, "extreme", "normal"), outlier_low=if_else(tol_adj < 38034373, "low", "normal")) 
+
+quantile(tol_wide$tol_adj, c(.05, .95))
+quantile(tol_wide$tol_adj, c(.09))
+
+tol_sum <- tol_wide %>% group_by(Date) %>% summarize(mean=mean(tol_adj))
+
+tol_adjust <- left_join(tol_wide, tol_sum) %>% mutate(tol_final = if_else(outlier_low=="low", mean, tol_adj))
+
+ggplot(aes(x=tol_adj, fill=outlier_low), data=tol_wide)+geom_histogram()
+
+ggplot(aes(x=tol_final), data=tol_adjust)+geom_histogram(bins=20)
+
+
+scent_data <- left_join(combined_all_ratio, tol_adjust, by=c("sample"="Sample")) %>% dplyr::select(c(date:Date, tol_final))
+
+#need to add toluene to an object that contains the peak areas we want to manipulate, and the number of flowers
+
+#adding tol_final column to a wide object with the scent data I think
+
+funfun <- function(col, tol.area, N.fl){
+  (col/tol.area)*23.6*55*(1/3)*(1/N.fl)
+}
+
+scent_data_tol <- scent_data %>% mutate_at(c(5:19), list(~funfun(., tol_final, as.numeric(amount))))
+
+a <- ggplot(aes(log(total)),data=scent_data_tol)+geom_histogram(fill="#99e291", color="white")+theme_classic()+xlab("log(total scent emissions in toluene equivalents)")+ylab("frequency")+ggtitle("Scent distribution in all F2s")
+
+
+gene_exp <- read_excel("Dissections_2022.xlsx") %>% filter(Plant!="UNK")
+
+scent_info <- read_excel("Scent_2022.xlsx") 
+
+scent_data_tol$sample <- as.numeric(scent_data_tol$sample)
+scent_data_info <- left_join(scent_data_tol, scent_info, by=c("sample"="Scent ID"))
+
+scent_data_gene_exp <- scent_data_info %>% filter(`Plant ID` %in% gene_exp$Plant)
+
+b <- ggplot(aes(log(total)),data=scent_data_gene_exp)+geom_histogram(fill="#cd5d39", color="white")+theme_classic()+xlab("log(total scent emissions in toluene equivalents)")+ylab("frequency")#+ggtitle("Scent distribution in plants sampled for gene expression")
+
+c <- ggplot(aes(log(four_methoxybenzaldehyde+0.0001)),data=scent_data_gene_exp)+geom_histogram(fill="#ca586f", color="white")+theme_classic()+xlab("log(4-methoxybenzaldehyde emissions in toluene equivalents)")+ylab("frequency")+annotate("text", x=0, y= 60, label="247")
+
+c1 <- ggplot(aes(four_methoxybenzaldehyde+0.0001,total), data=scent_data_gene_exp )+geom_point(color="#ca586f")+theme_classic()+xlab("four methoxybenzaldehyde emissions in toluene equivalents")+ylab("total scent emissions in toluene equivalents")+ theme(legend.position = "none")
+
+d <- ggplot(aes(log(four_oxoisophorone+0.0001)),data=scent_data_gene_exp)+geom_histogram(fill="#b49041", color="white")+theme_classic()+xlab("log(4-oxoisophorone emissions in toluene equivalents)")+ylab("frequency")+annotate("text", x=-2.5, y= 60, label="353")#+ggtitle("Scent distribution in plants sampled for gene expression")
+
+d1 <- ggplot(aes(four_oxoisophorone+0.0001,total), data=scent_data_gene_exp )+geom_point(color="#b49041")+theme_classic()+xlab("four oxoisophorone emissions in toluene equivalents")+ylab("total scent emissions in toluene equivalents")+ theme(legend.position = "none")
+
+e <- ggplot(aes(log(phenylethyl_alcohol+0.0001)),data=scent_data_gene_exp)+geom_histogram(fill="#75ab3d", color="white")+theme_classic()+xlab("log(phenylethyl alcohol emissions in toluene equivalents)")+ylab("frequency")+annotate("text", x=0, y= 60, label="106")#+ggtitle("Scent distribution in plants sampled for gene expression")
+
+e1 <- ggplot(aes(phenylethyl_alcohol+0.0001,total), data=scent_data_gene_exp )+geom_point(color="#75ab3d")+theme_classic()+xlab("phenylethyl alcohol emissions in toluene equivalents")+ylab("total scent emissions in toluene equivalents")+ theme(legend.position = "none")
+
+f <- ggplot(aes(log(methyl_benzoate+0.0001)),data=scent_data_gene_exp)+geom_histogram(fill="#54a676", color="white")+theme_classic()+xlab("log(methyl benzoate emissions in toluene equivalents)")+ylab("frequency")+annotate("text", x=0, y= 60, label="66")#+ggtitle("Scent distribution in plants sampled for gene expression")
+
+f1 <- ggplot(aes(methyl_benzoate+0.0001,total), data=scent_data_gene_exp )+geom_point(color="#54a676")+theme_classic()+xlab("methyl benzoate emissions in toluene equivalents")+ylab("total scent emissions in toluene equivalents")+ theme(legend.position = "none")
+
+#g <- ggplot(aes(log(phenylacetaldehyde+0.0001)),data=scent_data_gene_exp)+geom_histogram(fill="#99e291", color="white")+theme_classic()+xlab("log(phenylacetaldehyde emissions in toluene equivalents)")+ylab("frequency")#+ggtitle("Scent distribution in plants sampled for gene expression")
+
+h <- ggplot(aes(log(benzyl_acetate+0.0001)),data=scent_data_gene_exp)+geom_histogram(fill="#62a3d7", color="white")+theme_classic()+xlab("log(benzyl acetate emissions in toluene equivalents)")+ylab("frequency")+annotate("text", x=0, y= 60, label="181")#+ggtitle("Scent distribution in plants sampled for gene expression")
+
+h1 <- ggplot(aes(benzyl_acetate+0.0001,total), data=scent_data_gene_exp )+geom_point(color="#62a3d7")+theme_classic()+xlab("benzyl acetate emissions in toluene equivalents")+ylab("total scent emissions in toluene equivalents")+ theme(legend.position = "none")
+
+#i <- ggplot(aes(log(phenylethyl_acetate+0.0001)),data=scent_data_gene_exp)+geom_histogram(fill="#99e291", color="white")+theme_classic()+xlab("log(phenylethyl acetate emissions in toluene equivalents)")+ylab("frequency")#+ggtitle("Scent distribution in plants sampled for gene expression")
+
+#j <- ggplot(aes(log(benzene_propanol+0.0001)),data=scent_data_gene_exp)+geom_histogram(fill="#99e291", color="white")+theme_classic()+xlab("log(benzene propanol emissions in toluene equivalents)")+ylab("frequency")#+ggtitle("Scent distribution in plants sampled for gene expression")
+
+#k <- ggplot(aes(log(cinnamyl_alcohol+0.0001)),data=scent_data_gene_exp)+geom_histogram(fill="#99e291", color="white")+theme_classic()+xlab("log(cinnamyl alcohol emissions in toluene equivalents)")+ylab("frequency")#+ggtitle("Scent distribution in plants sampled for gene expression")
+
+#l <- ggplot(aes(log(benzyl_benzoate+0.0001)),data=scent_data_gene_exp)+geom_histogram(fill="#99e291", color="white")+theme_classic()+xlab("log(benzyl benzoate emissions in toluene equivalents)")+ylab("frequency")#+ggtitle("Scent distribution in plants sampled for gene expression")
+
+m <- ggplot(aes(log(benzaldehyde+0.0001)),data=scent_data_gene_exp)+geom_histogram(fill="#7071c7", color="white")+theme_classic()+xlab("log(benzaldehyde emissions in toluene equivalents)")+ylab("frequency")+annotate("text", x=0, y= 60, label="323")#+ggtitle("Scent distribution in plants sampled for gene expression")
+
+m1 <- ggplot(aes(benzaldehyde+0.0001,total), data=scent_data_gene_exp )+geom_point(color="#7071c7")+theme_classic()+xlab("benzaldehyde emissions in toluene equivalents")+ylab("total scent emissions in toluene equivalents")+ theme(legend.position = "none")
+
+n <-  ggplot(aes(log(acetophenone+0.0001)),data=scent_data_gene_exp)+geom_histogram(fill="#a45dcf", color="white")+theme_classic()+xlab("log(acetophenone emissions in toluene equivalents)")+ylab("frequency")+annotate("text", x=0, y= 60, label="151")#+ggtitle("Scent distribution in plants sampled for gene expression")
+
+n1 <- ggplot(aes(acetophenone+0.0001,total), data=scent_data_gene_exp )+geom_point(color="#a45dcf")+theme_classic()+xlab("acetophenone emissions in toluene equivalents")+ylab("total scent emissions in toluene equivalents")+ theme(legend.position = "none")
+
+o <- ggplot(aes(log(benzyl_alcohol+0.0001)),data=scent_data_gene_exp)+geom_histogram(fill="#c35ea5", color="white")+theme_classic()+xlab("log(benzyl alcohol emissions in toluene equivalents)")+ylab("frequency")+annotate("text", x=0, y= 60, label="224")#+ggtitle("Scent distribution in plants sampled for gene expression")
+
+o1 <- ggplot(aes(benzyl_alcohol+0.0001,total), data=scent_data_gene_exp )+geom_point(color="#c35ea5")+theme_classic()+xlab("benzyl alcohol emissions in toluene equivalents")+ylab("total scent emissions in toluene equivalents")+ theme(legend.position = "none")
+
+#p <- ggplot(aes(log(methyl_salicylate+0.0001)),data=scent_data_gene_exp)+geom_histogram(fill="#99e291", color="white")+theme_classic()+xlab("log(methyl salicylate emissions in toluene equivalents)")+ylab("frequency")#+ggtitle("Scent distribution in plants sampled for gene expression")
+
+ggarrange(b,c,d,e,f,h, m,n,o, nrow=3, ncol=3)
+
+ggarrange(b,c1,d1,e1,f1,h1, m1,n1,o1, nrow=3, ncol=3)
+
+```
+
+
+
+

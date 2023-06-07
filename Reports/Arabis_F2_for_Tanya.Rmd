@@ -1,0 +1,83 @@
+---
+title: "Potential asymmetries in Arabis F2 reproductive success"
+output: github_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+*Background*: Crosses were performed between Fr2 plants (France2), which are self-compatible and have very low scent emission, and plants from multiple Italian populations, which are self-incompatible and have variable scent profiles across populations but generally high emission rates.  These F1s were then selfed to create F2s.
+
+
+**Table 1**. A summary of the parentage of the F1s that were selfed to make the F2s. Maternal and paternal seed sources refer to the parental generation.
+
+Maternal seed source | Paternal seed source(s)
+----------------------|----------------------
+Fr2 | It2, It5, It6, It8, It9, It10, It17
+It2 | Fr2
+It6 | Fr2
+It8 | Fr2
+It9 | Fr2 
+
+The crosses that we have represented in the F2s in both directions are Fr2 with It2, It6, It8, and It9.
+
+
+```{r, warning=FALSE, message=FALSE, echo=FALSE}
+library(tidyverse)
+library(knitr)
+library(lme4)
+library(lmerTest)
+library(emmeans)
+
+seeds <- read_csv("F1_pollinations_2021.csv")
+
+ids <- read_csv("F1_individuals_2020.csv")
+```
+
+```{r, warning=FALSE, message=FALSE, echo=FALSE}
+#Add ID information to the seed counts:
+seed_ids <- left_join(seeds, ids, by=c("Mother_ID"="Full_ID"))
+```
+
+**Table 2**: A summary of seed production by F1 cross type. `Cross_Type` is mother population x father population. `N_Cross` is the number of crosses of unique crosses of the cross type that were performed (e.g., different parental plants from the populations). `N_F1` is the total number of F1 plants from a given cross that were selfed to make the F2s. `N_Fruits` is the total number of fruits from that cross (e.g., the sum of all of the fruits from each of the plants from the particular cross type). `Seed_Count` is the total number of seeds generated from all of the fruits and plants of the particular cross type. `SeedsperFruit` is the average number of seeds in a fruit, to help identify which plants produced fruits with more seeds and compare across crosses that had different number of plants or fruits. 
+
+```{r, warning=FALSE, message=FALSE, echo=FALSE}
+counts <- seed_ids %>% filter(Treatment=="Self") %>% mutate(N_Seeds = replace_na(N_Seeds, 0)) %>% group_by(Cross_Type) %>%  summarize(N_Cross=length(unique(ID)), N_F1=length(unique(Mother_ID)), N_Fruits=length(Mother_ID), Seed_Count=sum(N_Seeds), SeedsperFruit=round(mean(N_Seeds), digits=0)) %>% filter(Seed_Count>0)
+
+kable(counts)
+```
+
+*Observation*: Aside from the IT6 x Fr2 cross, which set a lot of seeds in both directions, in general it seems like crosses with Italian mothers set fewer seeds overall and fewer seeds per fruit.
+
+
+To test if reproductive success is asymmetric depending on the cross direction, I analyzed whether reproductive success measures (seeds per fruit, total seed set) differ between crosses with a French mother vs crosses with an Italian mother. The specific parents used to create a particular F2 (because sometimes there were multiple F1s from a specific cross, see `N_Cross` in Table 2 above) was nested within the Italian population involved in the cross (because the French population was always Fr2) and this was included as a random effect in the model.
+
+```{r, warning=FALSE, message=FALSE, echo=FALSE}
+
+obj <- seed_ids %>% filter(Treatment=="Self") %>% mutate(N_Seeds = replace_na(N_Seeds, 0), F1_ID=Mother_ID) %>% group_by(Cross_Type, F1_ID) %>% summarize(N_Fruits=length(Mother_ID),Seed_Count=sum(N_Seeds), SeedsperFruit=mean(N_Seeds)) %>% filter(!is.na(Cross_Type)) %>% mutate(Cross_Type2 =if_else(str_detect(Cross_Type,"^Fr"), "Fr", "It")) %>% separate(F1_ID, c("Cross", "Individual")) %>% separate(Cross_Type, c("Mother", "Father"), sep="x") %>% mutate(Italian_Pop = if_else(str_detect(Mother, "^IT"), Mother, "NA")) %>% mutate(Italian_Pop = if_else(str_detect(Italian_Pop, "NA"), Father, Italian_Pop))
+
+
+model <- lmer(SeedsperFruit~Cross_Type2+(1|Italian_Pop/Cross), data=obj)
+
+#par(mfrow=c(1,2))
+#hist(resid(model))
+#plot(predict(model),resid(model)) ; abline(h=0)
+
+```
+
+Here is the anova output for the model of seeds/fruit:
+```{r, warning=FALSE, message=FALSE, echo=FALSE}
+anova(model)
+```
+
+And the numerical results of the contrast between the groups and a plot of the estimated marginal means:
+
+```{r, warning=FALSE, message=FALSE, echo=FALSE}
+pairs(emmeans(model, "Cross_Type2"))
+plot(emmeans(model, "Cross_Type2")) + xlab("Seeds/fruit (estimated marginal mean)") + theme_classic()+scale_y_discrete("Country of the mother", c("Fr", "It"), c("France", "Italy"))
+```
+
+*Crosses with French mothers set more seeds than crosses with Italian mothers.* Analyzing total seed set rather than seeds per fruit gives the same result.
+
+
